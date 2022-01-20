@@ -523,20 +523,4 @@ contract ClaimFee {
     function getClass(string calldata ilk, uint256 issuance, uint256 maturity) public pure returns (bytes32 class_) {
         class_ = keccak256(abi.encodePacked(bytes32(bytes(ilk)), issuance, maturity));
     }
-
-    // Issue at current timestamp after taking a snapshot
-    /// @param ilk Collateral Type
-    /// @param usr User address
-    /// @param maturity Maturity timestamp set for claim balance
-    /// @param bal Claim balance issued by governance
-    /// @dev Issuance set to block.timestamp
-    function issueNow(
-        bytes32 ilk,
-        address usr,
-        uint256 maturity,
-        uint256 bal
-    ) external auth {
-        this.snapshot(ilk);
-        this.issue(ilk, usr, block.timestamp, maturity, bal);
-    }
 }
