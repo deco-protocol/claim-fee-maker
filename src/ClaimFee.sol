@@ -35,9 +35,9 @@ contract ClaimFee {
     }
 
     // --- Deco ---
-    address public immutable gate; // gate address
-    address public immutable vat; // vat address
-    address public immutable vow; // vow address
+    address public gate; // gate address
+    address public vat; // vat address
+    address public vow; // vow address
 
     mapping(address => mapping(bytes32 => uint256)) public cBal; // user address => class => balance [wad]
     mapping(bytes32 => uint256) public totalSupply; // class => total supply [wad]
@@ -96,9 +96,11 @@ contract ClaimFee {
     /// @param ilk Collateral Type 
     function initializeIlk(bytes32 ilk) public auth {
         require(initializedIlks[ilk] == false, "ilk/initialized");
-        require(this.snapshot(ilk) != 0, "ilk/not-initialized"); // check ilk is valid
+        (, uint256 rate, , , ) = VatAbstract(vat).ilks(ilk);
+        require(rate != 0, "ilk/not-initialized"); // check ilk is valid
 
         initializedIlks[ilk] = true; // add it to list of initializedIlks
+        this.snapshot(ilk); // take a snapshot
     }
 
     // --- Internal functions ---
@@ -264,6 +266,8 @@ contract ClaimFee {
         uint256 maturity,
         uint256 bal
     ) external auth untilClose() {
+        require(initializedIlks[ilk] == true, "ilk/not-initialized");
+        
         // issuance has to be before or at latest
         // maturity cannot be before latest
         require(
