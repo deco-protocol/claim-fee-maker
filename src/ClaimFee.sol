@@ -43,13 +43,13 @@ contract ClaimFee {
     mapping(bytes32 => uint256) public totalSupply; // class => total supply [wad]
 
     mapping(bytes32 => bool) public initializedIlks; // ilk => initialization status
-    mapping(bytes32 => mapping (uint256 => uint256)) public frac; // ilk => timestamp => frac value [wad] ex: 0.85
-    mapping(bytes32 => uint256) public latestFracTimestamp; // ilk => latest frac timestamp
+    mapping(bytes32 => mapping (uint256 => uint256)) public rate; // ilk => timestamp => rate value [ray] ex: 1.05
+    mapping(bytes32 => uint256) public latestRateTimestamp; // ilk => latest rate timestamp
     
     mapping (bytes32 => mapping(uint256 => uint256)) public ratio; // ilk => maturity timestamp => balance cashout ratio [wad]
     uint256 public closeTimestamp; // deco close timestamp
 
-    event NewFrac(bytes32 indexed ilk, uint256 indexed time, uint256 frac);
+    event NewRate(bytes32 indexed ilk, uint256 indexed time, uint256 rate);
     event MoveClaim(address indexed src, address indexed dst, bytes32 indexed class_, uint256 bal);
 
     constructor(address gate_) {
@@ -66,6 +66,8 @@ contract ClaimFee {
     // --- Utils ---
     uint256 constant internal MAX_UINT = 2**256 - 1;
     uint256 constant internal WAD = 10 ** 18;
+    uint256 constant internal RAY = 10 ** 27;
+    uint256 constant internal RAD = 10 ** 45;
 
     function wmul(uint x, uint y) internal pure returns (uint z) {
         z = (x * y) / WAD;
@@ -96,8 +98,8 @@ contract ClaimFee {
     /// @param ilk Collateral Type 
     function initializeIlk(bytes32 ilk) public auth {
         require(initializedIlks[ilk] == false, "ilk/initialized");
-        (, uint256 rate, , , ) = VatAbstract(vat).ilks(ilk);
-        require(rate != 0, "ilk/not-initialized"); // check ilk is valid
+        (, uint256 ilkRate, , , ) = VatAbstract(vat).ilks(ilk);
+        require(ilkRate != 0, "ilk/not-initialized"); // check ilk is valid
 
         initializedIlks[ilk] = true; // add it to list of initializedIlks
         this.snapshot(ilk); // take a snapshot
@@ -151,15 +153,15 @@ contract ClaimFee {
     /// Lock transfers dai balance from user to maker
     /// Vow is used as destination
     /// @param usr User address
-    /// @param frac_ Fraction value to apply
-    /// @param bal_ Claim balance
+    /// @param rateDiff_ Rate difference to apply
+    /// @param nbal_ Normalized balance
     /// @dev user has to approve deco instance within vat
     function lock(
         address usr,
-        uint256 frac_,
-        uint256 bal_
+        uint256 rateDiff_,
+        uint256 nbal_
     ) internal {
-        uint256 daiAmt = ((wmul(bal_, frac_) * (10 ** 27)) + WAD); // [wad * ray = rad]
+        uint256 daiAmt = ((nbal_ * rateDiff_) + RAD); // [wad * ray = rad]
         // add one wad to cover calculation losses
         VatAbstract(vat).move(usr, vow, daiAmt); // transfer dai from user to vow
     }
@@ -167,14 +169,14 @@ contract ClaimFee {
     /// Unlock transfers dai balance from maker to user
     /// Gate is used as source
     /// @param usr User address
-    /// @param frac_ Fraction value to apply
-    /// @param bal_ Claim balance
+    /// @param rateDiff_ Rate difference to apply
+    /// @param nbal_ Normalized balance
     function unlock(
         address usr,
-        uint256 frac_,
-        uint256 bal_
+        uint256 rateDiff_,
+        uint256 nbal_
     ) internal {
-        uint256 daiAmt = (bal_ * frac_) * 10**9; // [rad = ((wad * wad) * 10**9)]
+        uint256 daiAmt = (nbal_ * rateDiff_); // [rad = wad * ray]
         GateAbstract(gate).suck(vow, usr, daiAmt); // transfer dai from gate to user
     }
 
@@ -200,52 +202,48 @@ contract ClaimFee {
         emit MoveClaim(src, dst, class_, bal);
     }
 
-    // --- Frac Functions ---
-    /// Snapshots stability fee fraction value of ilk for current timestamp
+    // --- Rate Functions ---
+    /// Snapshots ilk rate value at current timestamp
     /// @param ilk Collateral Type
-    /// @return newFracValue Ilk fraction value at current timestamp
+    /// @return ilkRate Ilk rate value at current timestamp
     /// @dev Snapshot is not allowed after close
-    function snapshot(bytes32 ilk) external untilClose() returns (uint256 newFracValue) {
+    function snapshot(bytes32 ilk) external untilClose() returns (uint256 ilkRate) {
         require(initializedIlks[ilk] == true, "ilk/not-initialized");
 
-        (, uint256 newRate, , , ) = VatAbstract(vat).ilks(ilk); // retrieve ilk.rate [ray]
+        (, ilkRate, , , ) = VatAbstract(vat).ilks(ilk); // retrieve ilk.rate [ray]
 
-        newFracValue = (10 ** 45) / newRate; // [wad = rad / ray]
-        frac[ilk][block.timestamp] = newFracValue; // update frac value at current timestamp
-        latestFracTimestamp[ilk] = block.timestamp; // update latest frac timestamp available for this ilk
+        rate[ilk][block.timestamp] = ilkRate; // update rate value at current timestamp
+        latestRateTimestamp[ilk] = block.timestamp; // update latest rate timestamp available for this ilk
 
-        emit NewFrac(ilk, block.timestamp, newFracValue);
+        emit NewRate(ilk, block.timestamp, ilkRate);
     }
 
-    /// Governance can insert a fraction value at a timestamp
+    /// Governance can insert a rate value at a timestamp
     /// @param ilk Collateral Type
-    /// @param tBefore Fraction value timestamp before insert timestamp to compare with
-    /// @param t New fraction value timestamp
-    /// @param frac_ Fraction value
+    /// @param tBefore Rate value timestamp before insert timestamp to compare with as a guardrail
+    /// @param t New rate value timestamp to insert at
+    /// @param rate_ Rate value to insert at t
     /// @dev Can be executed after close but timestamp cannot fall after close timestamp
     /// @dev since all processing for balances after close is handled by ratio
-    /// @dev Insert is allowed after close since guardrail prevents adding frac values after ilk latest
-    function insert(bytes32 ilk, uint256 tBefore, uint256 t, uint256 frac_) external auth {
-        // governance calculates frac value from rate
-        // ex: rate: 1.25, frac: 1/1.25 = 0.80
+    /// @dev Insert is allowed after close since guardrail prevents adding rate values after ilk latest
+    function insert(bytes32 ilk, uint256 tBefore, uint256 t, uint256 rate_) external auth {
+        // t is between before and tLatest(latestRateTimestamp of ilk)
+        uint256 tLatest = latestRateTimestamp[ilk];
+        // also ensures t is before block.timestamp and not in the future
+        require(tBefore < t && t < tLatest, "rate/timestamps-not-in-order");
         
-        // t is between before and tLatest(latestFracTimestamp of ilk)
-        uint256 tLatest = latestFracTimestamp[ilk];
-        // also ensures t is not in the future and before block.timestamp
-        require(tBefore < t && t < tLatest, "frac/timestamps-not-in-order");
+        // rate values should be valid
+        require(rate_ >= RAY, "rate/below-one"); // should be 1 ray or above
+        require(rate[ilk][t] == 0, "rate/overwrite-disabled"); // overwriting rate value disabled
+        require(rate[ilk][tBefore] != 0, "rate/tBefore-not-present"); // rate value has to be present at tBefore
         
-        // frac values should be valid
-        require(frac_ <= WAD, "frac/above-one"); // should be 1 wad or below
-        require(frac[ilk][t] == 0, "frac/overwrite-disabled"); // overwriting frac value disabled
-        require(frac[ilk][tBefore] != 0, "frac/tBefore-not-present"); // frac value has to be present at tBefore
-        
-        // for safety, inserted frac value has to fall somewhere between before and latest frac values
-        require(frac[ilk][tBefore] <= frac_ && frac_ <= frac[ilk][tLatest], "frac/invalid");
+        // for safety, inserted rate value has to fall somewhere between before and latest rate values
+        require(rate[ilk][tBefore] <= rate_ && rate_ <= rate[ilk][tLatest], "rate/invalid");
 
-        // insert frac value at timestamp t
-        frac[ilk][t] = frac_;
+        // insert rate value at timestamp t
+        rate[ilk][t] = rate_;
 
-        emit NewFrac(ilk, t, frac_);
+        emit NewRate(ilk, t, rate_);
     }
 
     // --- Claim Functions ---
@@ -255,10 +253,10 @@ contract ClaimFee {
     /// @param issuance Issuance timestamp
     /// @param maturity Maturity timestamp set for claim balance
     /// @param bal Claim balance issued by governance
-    /// @dev Issuance timestamp set to the block.timestamp value
     /// @dev bal amount is in wad
-    /// @dev Convenience function available to both capture a snapshot at current timestamp and issue
     /// @dev Issue is not allowed after close
+    /// @dev usr address will likely be controlled by governance
+    /// @dev various methods can be used to distribute claim fee balance from usr to vault owners
     function issue(
         bytes32 ilk,
         address usr,
@@ -271,11 +269,11 @@ contract ClaimFee {
         // issuance has to be before or at latest
         // maturity cannot be before latest
         require(
-            issuance <= latestFracTimestamp[ilk] && latestFracTimestamp[ilk] <= maturity,
+            issuance <= latestRateTimestamp[ilk] && latestRateTimestamp[ilk] <= maturity,
             "timestamp/invalid"
         );
-        // frac value should exist at issuance
-        require(frac[ilk][issuance] != 0, "frac/invalid");
+        // rate value should exist at issuance
+        require(rate[ilk][issuance] != 0, "rate/invalid");
 
         // issue claim balance 
         mintClaim(ilk, usr, issuance, maturity, bal);
@@ -283,7 +281,7 @@ contract ClaimFee {
 
     /// Withdraws claim balance held by governance before maturity
     /// @dev Governance is allowed to burn the balance it owns
-    /// @dev Users cannot withdraw their claim balance
+    /// @dev Users cannot withdraw their claim balance, can only execute collect
     /// @param ilk Collateral Type
     /// @param usr User address
     /// @param maturity Maturity timestamp of claim balance
@@ -324,19 +322,20 @@ contract ClaimFee {
             "timestamp/invalid"
         );
 
-        uint256 issuanceFrac = frac[ilk][issuance]; // frac value at issuance timestamp
-        uint256 collectFrac = frac[ilk][collect_]; // frac value at collect timestamp
+        uint256 issuanceRate = rate[ilk][issuance]; // rate value at issuance timestamp
+        uint256 collectRate = rate[ilk][collect_]; // rate value at collect timestamp
 
-        // issuance frac value cannot be 0
-        // sliced claim balances in this situation can use activate to move issuance to timestamp with frac value
-        require(issuanceFrac != 0, "frac/invalid");
-        require(collectFrac != 0, "frac/invalid"); // collect frac value cannot be 0
+        // issuance rate value should not be 0
+        // sliced claim balances without issuance rate values 
+        // can use activate to move issuance to timestamp with rate value
+        require(issuanceRate != 0, "rate/invalid");
+        require(collectRate != 0, "rate/invalid"); // collect rate value cannot be 0
 
-        require(issuanceFrac > collectFrac, "frac/no-difference"); // frac difference should be present
+        require(collectRate > issuanceRate, "rate/no-difference"); // rate difference should be present
 
         burnClaim(ilk, usr, issuance, maturity, bal); // burn current claim balance
         
-        unlock(usr, (issuanceFrac - collectFrac), bal);
+        unlock(usr, (collectRate - issuanceRate), ((bal*RAY)/issuanceRate));
 
         // mint new claim balance for user to collect future yield earned between collect and maturity timestamps
         if (collect_ != maturity) {
@@ -351,7 +350,7 @@ contract ClaimFee {
     /// @param maturity Maturity timestamp
     /// @param collect_ Collect timestamp
     /// @param bal Claim balance amount
-    /// @dev Rewind also transfers dai from user to offset the extra yield loaded
+    /// @dev Rewind transfers dai from user to offset the extra yield loaded
     /// @dev into claim balance by shifting issuance timestamp
     /// @dev Rewind is not allowed after close to stop dai from being sent to vow
     function rewind(
@@ -369,16 +368,16 @@ contract ClaimFee {
             "timestamp/invalid"
         );
 
-        uint256 collectFrac = frac[ilk][collect_]; // frac value at collect timestamp
-        uint256 issuanceFrac = frac[ilk][issuance]; // frac value at issuance timestamp
+        uint256 collectRate = rate[ilk][collect_]; // rate value at collect timestamp
+        uint256 issuanceRate = rate[ilk][issuance]; // rate value at issuance timestamp
 
-        require(collectFrac != 0, "frac/invalid"); // collect frac value cannot be 0
-        require(issuanceFrac != 0, "frac/invalid"); // issuance frac value cannot be 0
-        require(collectFrac > issuanceFrac, "frac/no-difference"); // frac difference should be present
+        require(collectRate != 0, "rate/invalid"); // collect rate value cannot be 0
+        require(issuanceRate != 0, "rate/invalid"); // issuance rate value cannot be 0
+        require(issuanceRate > collectRate, "rate/no-difference"); // rate difference should be present
 
         burnClaim(ilk, usr, issuance, maturity, bal); // burn claim balance
 
-        lock(usr, (collectFrac - issuanceFrac), bal);
+        lock(usr, (issuanceRate - collectRate), ((bal*RAY)/issuanceRate));
 
         // mint new claim balance with issuance set to earlier collect timestamp
         mintClaim(ilk, usr, collect_, maturity, bal);
@@ -393,8 +392,8 @@ contract ClaimFee {
     /// @param t3 Maturity timestamp
     /// @param bal Claim balance amount
     /// @dev Slice issues two new claim balances, the second part needs to be activated
-    /// @dev in the future at a timestamp that has a frac value when slice fails to get one
-    /// @dev SLice can be used both before or after close
+    /// @dev in the future at a timestamp that has a rate value when slice fails to get one
+    /// @dev Slice can be used both before or after close
     function slice(
         bytes32 ilk,
         address usr,
@@ -435,11 +434,11 @@ contract ClaimFee {
         mintClaim(ilk, usr, t1, t3, bal); // mint whole
     }
 
-    /// Activates a balance whose issuance timestamp does not have a fraction value set
+    /// Activates a balance whose issuance timestamp does not have a rate value set
     /// @param ilk Collateral Type
     /// @param usr User address
-    /// @param t1 Issuance timestamp without a fraction value
-    /// @param t2 Activation timestamp with a fraction value set
+    /// @param t1 Issuance timestamp without a rate value
+    /// @param t2 Activation timestamp with a rate value set
     /// @param t3 Maturity timestamp
     /// @param bal Claim balance amount
     /// @dev Yield earnt between issuance and activation becomes uncollectable and is permanently lost
@@ -455,8 +454,8 @@ contract ClaimFee {
         require(wish(usr, msg.sender), "not-allowed");
         require(t1 < t2 && t2 < t3, "timestamp/invalid"); // all timestamps are in order
 
-        require(frac[ilk][t1] == 0, "frac/valid"); // frac value should be missing at issuance
-        require(frac[ilk][t2] != 0, "frac/invalid"); // valid frac value required to activate
+        require(rate[ilk][t1] == 0, "rate/valid"); // rate value should be missing at issuance
+        require(rate[ilk][t2] != 0, "rate/invalid"); // valid rate value required to activate
 
         burnClaim(ilk, usr, t1, t3, bal); // burn inactive claim balance
         mintClaim(ilk, usr, t2, t3, bal); // mint active claim balance
@@ -464,7 +463,9 @@ contract ClaimFee {
 
     // --- Close ---
     /// Closes this deco instance
-    /// @dev Close timestamp automatically set to the latest fraction value captured when close is executed
+    /// @dev Close timestamp set to current block.timestamp
+    /// @dev Respective last rate values recorded for each ilk are used 
+    /// @dev as apppropriate for settlement before and after close
     /// @dev Setup close trigger conditions and control based on the requirements of the yield token integration
     function close() external {
         // close conditions need to be met,
@@ -488,7 +489,7 @@ contract ClaimFee {
         auth
         afterClose()
     {
-        require(ratio_ <= WAD, "ratio/not-fraction"); // needs to be less than or equal to 1
+        require(ratio_ <= WAD, "ratio/not-valid"); // needs to be less than or equal to 1
         require(ratio[ilk][maturity] == 0, "ratio/present"); // cannot overwrite existing ratio
 
         ratio[ilk][maturity] = ratio_;
@@ -499,10 +500,10 @@ contract ClaimFee {
     /// @param usr User address
     /// @param maturity Maturity timestamp
     /// @param bal Balance amount
-    /// @dev Issuance of claim needs to be at the latest frac timestamp of the ilk, 
+    /// @dev Issuance of claim needs to be at the latest rate timestamp of the ilk, 
     /// @dev which means user has collected all yield earned until latest using collect
     /// @dev Any previously sliced claim balances need to be merged back to their original balance
-    /// @dev before cashing out or a portion of their value will be permanently lost
+    /// @dev before cashing out or their entire value(or a portion) could be permanently lost
     function cashClaim(
         bytes32 ilk,
         address usr,
@@ -512,10 +513,10 @@ contract ClaimFee {
         require(wish(usr, msg.sender), "not-allowed");
         require(ratio[ilk][maturity] != 0, "ratio/not-set"); // cashout ratio needs to be set
         
-        uint256 daiAmt = wmul(bal, (WAD - ratio[ilk][maturity])); // yield token value of notional amount in claim
+        uint256 daiAmt = wmul(bal, (WAD - ratio[ilk][maturity])); // value of claim fee notional amount
         GateAbstract(gate).suck(vow, usr, daiAmt); // transfer dai to usr address
 
-        burnClaim(ilk, usr, latestFracTimestamp[ilk], maturity, bal);
+        burnClaim(ilk, usr, latestRateTimestamp[ilk], maturity, bal);
     }
 
     // --- Convenience Functions ---
