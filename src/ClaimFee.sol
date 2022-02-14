@@ -150,36 +150,6 @@ contract ClaimFee {
         emit MoveClaim(usr, address(0), class_, bal);
     }
 
-    /// Lock transfers dai balance from user to maker
-    /// Vow is used as destination
-    /// @param usr User address
-    /// @param rateDiff_ Rate difference to apply
-    /// @param nbal_ Normalized balance
-    /// @dev user has to approve deco instance within vat
-    function lock(
-        address usr,
-        uint256 rateDiff_,
-        uint256 nbal_
-    ) internal {
-        uint256 daiAmt = ((nbal_ * rateDiff_) + RAD); // [wad * ray = rad]
-        // add one wad to cover calculation losses
-        VatAbstract(vat).move(usr, vow, daiAmt); // transfer dai from user to vow
-    }
-
-    /// Unlock transfers dai balance from maker to user
-    /// Gate is used as source
-    /// @param usr User address
-    /// @param rateDiff_ Rate difference to apply
-    /// @param nbal_ Normalized balance
-    function unlock(
-        address usr,
-        uint256 rateDiff_,
-        uint256 nbal_
-    ) internal {
-        uint256 daiAmt = (nbal_ * rateDiff_); // [rad = wad * ray]
-        GateAbstract(gate).suck(vow, usr, daiAmt); // transfer dai from gate to user
-    }
-
     // --- Transfer Functions ---
     /// Transfers user's claim balance
     /// @param src Source address to transfer balance from
@@ -307,6 +277,7 @@ contract ClaimFee {
     /// @param bal Claim balance amount
     /// @dev Yield earned between issuance and maturity can be collected any number of times, not just once after maturity
     /// @dev Collect can be used both before or after close
+    /// @dev Gate is used as source to transfer dai to user
     function collect(
         bytes32 ilk,
         address usr,
@@ -331,11 +302,10 @@ contract ClaimFee {
         require(issuanceRate != 0, "rate/invalid");
         require(collectRate != 0, "rate/invalid"); // collect rate value cannot be 0
 
-        require(collectRate > issuanceRate, "rate/no-difference"); // rate difference should be present
-
         burnClaim(ilk, usr, issuance, maturity, bal); // burn current claim balance
         
-        unlock(usr, (collectRate - issuanceRate), ((bal*RAY)/issuanceRate));
+        uint256 daiAmt = bal * (((collectRate * RAY)/issuanceRate) - RAY); // [wad * ray = rad]
+        GateAbstract(gate).suck(vow, usr, daiAmt); // transfer dai from gate to user
 
         // mint new claim balance for user to collect future yield earned between collect and maturity timestamps
         if (collect_ != maturity) {
@@ -348,39 +318,42 @@ contract ClaimFee {
     /// @param usr User address
     /// @param issuance Issuance timestamp
     /// @param maturity Maturity timestamp
-    /// @param collect_ Collect timestamp
+    /// @param rewind_ Rewind timestamp
     /// @param bal Claim balance amount
     /// @dev Rewind transfers dai from user to offset the extra yield loaded
     /// @dev into claim balance by shifting issuance timestamp
     /// @dev Rewind is not allowed after close to stop dai from being sent to vow
+    /// @dev Vow is used as destination for dai transfer from user
+    /// @dev User has to approve deco instance within vat for rewind to suceed
     function rewind(
         bytes32 ilk,
         address usr,
         uint256 issuance,
         uint256 maturity,
-        uint256 collect_,
+        uint256 rewind_,
         uint256 bal
     ) external untilClose() {
         require(wish(usr, msg.sender), "not-allowed");
-        // collect timestamp needs to be before issuance(rewinding) and maturity after
+        // rewind timestamp needs to be before issuance(rewinding) and maturity after
         require(
-            (collect_ <= issuance) && (issuance <= maturity),
+            (rewind_ <= issuance) && (issuance <= maturity),
             "timestamp/invalid"
         );
 
-        uint256 collectRate = rate[ilk][collect_]; // rate value at collect timestamp
+        uint256 rewindRate = rate[ilk][rewind_]; // rate value at rewind timestamp
         uint256 issuanceRate = rate[ilk][issuance]; // rate value at issuance timestamp
 
-        require(collectRate != 0, "rate/invalid"); // collect rate value cannot be 0
+        require(rewindRate != 0, "rate/invalid"); // rewind rate value cannot be 0
         require(issuanceRate != 0, "rate/invalid"); // issuance rate value cannot be 0
-        require(issuanceRate > collectRate, "rate/no-difference"); // rate difference should be present
+        require(issuanceRate > rewindRate, "rate/no-difference"); // rate difference should be present
 
         burnClaim(ilk, usr, issuance, maturity, bal); // burn claim balance
 
-        lock(usr, (issuanceRate - collectRate), ((bal*RAY)/issuanceRate));
+        uint256 daiAmt = bal * (((issuanceRate * RAY)/rewindRate) - RAY); // [wad * ray = rad]
+        VatAbstract(vat).move(usr, vow, daiAmt); // transfer dai from user to vow
 
-        // mint new claim balance with issuance set to earlier collect timestamp
-        mintClaim(ilk, usr, collect_, maturity, bal);
+        // mint new claim balance with issuance set to earlier rewind timestamp
+        mintClaim(ilk, usr, rewind_, maturity, bal);
     }
 
     // ---  Future Claim Functions ---
@@ -513,7 +486,8 @@ contract ClaimFee {
         require(wish(usr, msg.sender), "not-allowed");
         require(ratio[ilk][maturity] != 0, "ratio/not-set"); // cashout ratio needs to be set
         
-        uint256 daiAmt = wmul(bal, (WAD - ratio[ilk][maturity])); // value of claim fee notional amount
+        // value of claim fee notional amount
+        uint256 daiAmt = (bal * (WAD - ratio[ilk][maturity])) * (10**9); // [rad]
         GateAbstract(gate).suck(vow, usr, daiAmt); // transfer dai to usr address
 
         burnClaim(ilk, usr, latestRateTimestamp[ilk], maturity, bal);
