@@ -2,7 +2,7 @@
 
 Deco protocol and Maker protocol integration to offer fixed-rate vaults as a feature on existing collateral types like ETH-A, WBTC-A, et cetra.
 
-*Please refer to the [technical documentation](https://docs.deco.money/#/integrations/maker-vaults) for additional details*
+*Please refer to the [technical documentation](https://docs.deco.tech/#/integrations/maker-vaults) for additional details*
 
 ## Requirements
 
