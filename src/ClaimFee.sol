@@ -77,6 +77,11 @@ contract ClaimFee {
         assembly{ z := or(x, y)}
     }
 
+    // -- Helpers methods --
+    function getCBalance(address usr, bytes32 class_) external view returns (uint256) {
+        return cBal[usr][class_];
+    }
+
     // --- Close Modifiers ---
     /// Restrict functions to work when deco instance is NOT closed
     modifier untilClose() {
@@ -500,6 +505,6 @@ contract ClaimFee {
     /// @param maturity Maturity timestamp
     /// @return class_ Calculated class value
     function getClass(string calldata ilk, uint256 issuance, uint256 maturity) public pure returns (bytes32 class_) {
-        class_ = keccak256(abi.encodePacked(bytes32(bytes(ilk)), issuance, maturity));
+        class_ = keccak256(abi.encodePacked(bytes(ilk), issuance, maturity));
     }
 }
