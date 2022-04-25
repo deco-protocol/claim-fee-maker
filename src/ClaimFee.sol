@@ -10,7 +10,7 @@ interface VatAbstract {
 interface GateAbstract {
     function vat() external view returns (address);
     function vow() external view returns (address);
-    function suck(address u, address v, uint256 rad) external;
+    function draw(address dst_, uint256 amount_) external;
 }
 
 contract ClaimFee {
@@ -36,8 +36,7 @@ contract ClaimFee {
 
     // --- Deco ---
     address public gate; // gate address
-    address public vat; // vat address
-    address public vow; // vow address
+    address public immutable vat; // vat address
 
     mapping(address => mapping(bytes32 => uint256)) public cBal; // user address => class => balance [wad]
     mapping(bytes32 => uint256) public totalSupply; // class => total supply [wad]
@@ -49,32 +48,42 @@ contract ClaimFee {
     mapping (bytes32 => mapping(uint256 => uint256)) public ratio; // ilk => maturity timestamp => balance cashout ratio [wad]
     uint256 public closeTimestamp; // deco close timestamp
 
+    event File(bytes32 indexed what, address data);
     event NewRate(bytes32 indexed ilk, uint256 indexed time, uint256 rate);
     event MoveClaim(address indexed src, address indexed dst, bytes32 indexed class_, uint256 bal);
+    event Closed(uint256 timestamp, uint256 vatLive);
+    event NewRatio(bytes32 indexed ilk, uint256 indexed maturity, uint256 ratio_);
 
     constructor(address gate_) {
         wards[msg.sender] = 1; // set admin
+        emit Rely(msg.sender);
 
         gate = gate_;
         vat = GateAbstract(gate).vat();
-        vow = GateAbstract(gate).vow();
 
-        // initialized to MAX_UINT and updated when this deco instance is closed
-        closeTimestamp = MAX_UINT;
+        // initialized to max uint and updated when this deco instance is closed
+        closeTimestamp = type(uint256).max;
     }
     
     // --- Utils ---
-    uint256 constant internal MAX_UINT = 2**256 - 1;
     uint256 constant internal WAD = 10 ** 18;
     uint256 constant internal RAY = 10 ** 27;
-    uint256 constant internal RAD = 10 ** 45;
-
-    function wmul(uint x, uint y) internal pure returns (uint z) {
-        z = (x * y) / WAD;
-    }
 
     function either(bool x, bool y) internal pure returns (bool z) {
         assembly{ z := or(x, y)}
+    }
+
+    /// Update Gate address
+    /// @dev Restricted to authorized governance addresses
+    /// @param what what value are we updating
+    /// @param data what are we updating it to
+    function file(bytes32 what, address data) external auth {
+        if (what == "gate") {
+            require(vat == GateAbstract(data).vat(), "vat-does-not-match");
+            gate = data; // update approved total amount
+
+            emit File(what, data);
+        } else revert("gate/file-not-recognized");
     }
 
     // --- Close Modifiers ---
@@ -125,6 +134,7 @@ contract ClaimFee {
         bytes32 class_ = keccak256(abi.encodePacked(ilk, issuance, maturity));
 
         cBal[usr][class_] = cBal[usr][class_] + bal;
+        totalSupply[class_] = totalSupply[class_] + bal;
         emit MoveClaim(address(0), usr, class_, bal);
     }
 
@@ -147,6 +157,7 @@ contract ClaimFee {
         require(cBal[usr][class_] >= bal, "cBal/insufficient-balance");
 
         cBal[usr][class_] = cBal[usr][class_] - bal;
+        totalSupply[class_] = totalSupply[class_] - bal;
         emit MoveClaim(usr, address(0), class_, bal);
     }
 
@@ -234,12 +245,10 @@ contract ClaimFee {
         uint256 maturity,
         uint256 bal
     ) external auth untilClose() {
-        require(initializedIlks[ilk] == true, "ilk/not-initialized");
-        
         // issuance has to be before or at latest
-        // maturity cannot be before latest
+        // maturity cannot be before current block timestamp
         require(
-            issuance <= latestRateTimestamp[ilk] && latestRateTimestamp[ilk] <= maturity,
+            issuance <= latestRateTimestamp[ilk] && block.timestamp <= maturity,
             "timestamp/invalid"
         );
         // rate value should exist at issuance
@@ -253,18 +262,16 @@ contract ClaimFee {
     /// @dev Governance is allowed to burn the balance it owns
     /// @dev Users cannot withdraw their claim balance, can only execute collect
     /// @param ilk Collateral Type
-    /// @param usr User address
     /// @param maturity Maturity timestamp of claim balance
     /// @param bal Claim balance amount to burn
     /// @dev With can be used both before or after close
     function withdraw(
         bytes32 ilk,
-        address usr,
         uint256 issuance,
         uint256 maturity,
         uint256 bal
     ) external auth {
-        burnClaim(ilk, usr, issuance, maturity, bal);
+        burnClaim(ilk, msg.sender, issuance, maturity, bal);
     }
 
     // --- Claim Functions ---
@@ -305,7 +312,7 @@ contract ClaimFee {
         burnClaim(ilk, usr, issuance, maturity, bal); // burn current claim balance
         
         uint256 daiAmt = bal * (((collectRate * RAY)/issuanceRate) - RAY); // [wad * ray = rad]
-        GateAbstract(gate).suck(vow, usr, daiAmt); // transfer dai from gate to user
+        GateAbstract(gate).draw(usr, daiAmt); // transfer dai from gate to user
 
         // mint new claim balance for user to collect future yield earned between collect and maturity timestamps
         if (collect_ != maturity) {
@@ -350,7 +357,8 @@ contract ClaimFee {
         burnClaim(ilk, usr, issuance, maturity, bal); // burn claim balance
 
         uint256 daiAmt = bal * (((issuanceRate * RAY)/rewindRate) - RAY); // [wad * ray = rad]
-        VatAbstract(vat).move(usr, vow, daiAmt); // transfer dai from user to vow
+        address vow_ = GateAbstract(gate).vow();
+        VatAbstract(vat).move(usr, vow_, daiAmt); // transfer dai from user to vow
 
         // mint new claim balance with issuance set to earlier rewind timestamp
         mintClaim(ilk, usr, rewind_, maturity, bal);
@@ -445,9 +453,12 @@ contract ClaimFee {
         // * maker protocol is shutdown, or
         // * maker governance executes close
         require(wards[msg.sender] == 1 || VatAbstract(vat).live() == 0, "close/conditions-not-met");
-        require(closeTimestamp == MAX_UINT, "closed"); // can be closed only once
+        require(closeTimestamp == type(uint256).max, "closed"); // can be closed only once
 
         closeTimestamp = block.timestamp;
+
+        // close timestamp, and vat.live status at close
+        emit Closed(block.timestamp, VatAbstract(vat).live());
     }
 
     /// Stores a ratio value
@@ -466,6 +477,8 @@ contract ClaimFee {
         require(ratio[ilk][maturity] == 0, "ratio/present"); // cannot overwrite existing ratio
 
         ratio[ilk][maturity] = ratio_;
+
+        emit NewRatio(ilk, maturity, ratio_);
     }
 
     /// Exchanges a claim balance with maturity after close timestamp for dai amount
@@ -488,7 +501,7 @@ contract ClaimFee {
         
         // value of claim fee notional amount
         uint256 daiAmt = (bal * (WAD - ratio[ilk][maturity])) * (10**9); // [rad]
-        GateAbstract(gate).suck(vow, usr, daiAmt); // transfer dai to usr address
+        GateAbstract(gate).draw(usr, daiAmt); // transfer dai to usr address
 
         burnClaim(ilk, usr, latestRateTimestamp[ilk], maturity, bal);
     }

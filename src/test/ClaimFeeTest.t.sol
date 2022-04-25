@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "ds-test/test.sol";
 import "dss.git/vat.sol";
-import "../common/DSMath.sol";
+import "./DSMath.sol";
 import "./Vm.sol";
 import {Gate1} from "dss-gate/gate1.sol";
 import {ClaimFee} from "../ClaimFee.sol";
@@ -69,8 +69,8 @@ contract Gov {
         cfm.issue(ilk, usr, issuance, maturity, bal);
     }
 
-    function withdraw(bytes32 ilk, address usr, uint256 issuance, uint256 maturity, uint256 bal) public {
-        cfm.withdraw(ilk, usr, issuance, maturity, bal);
+    function withdraw(bytes32 ilk, uint256 issuance, uint256 maturity, uint256 bal) public {
+        cfm.withdraw(ilk, issuance, maturity, bal);
     }
 
     function close() public {
@@ -143,6 +143,10 @@ contract CHolder {
     function cashClaim(bytes32 ilk, address usr, uint256 maturity, uint256 bal) public {
         cfm.cashClaim(ilk, usr, maturity, bal);
     }
+
+    function try_withdraw(bytes32 ilk, uint256 issuance, uint256 maturity, uint256 bal) public {
+        cfm.withdraw(ilk, issuance, maturity, bal);
+    }    
 }
 
 // when claim balance is transferred
@@ -387,6 +391,31 @@ contract ClaimFeeIssuanceTest is DSTest, DSMath {
 
         assertEq(cfm.cBal(holder_addr, class_t0_t2), wad(99));
     }
+
+    // should increase totalSupply
+    function testTotalSupplyIncrease() public {
+        gov.issue(ETH_A, holder_addr, t0, t2, wad(99));
+        bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
+
+        assertEq(cfm.totalSupply(class_t0_t2), wad(99));
+    }
+
+    // should fail if maturity falls after latest rate timestamp but before block.timestamp
+    function testFailIssuanceBetweenLatestRateAndBlockTimestamp() public {
+        // expectRevert "timestamp/invalid"
+
+        // forward time to t2 and take a snapshot
+        vm.warp(t2);
+        cfm.snapshot(ETH_A);
+
+        // forward time to t2+10 days
+        vm.warp(t2 + 10 days);
+        
+        // issue with maturity in the past
+        // one second after latest rate timestamp 
+        // but before current block.timestamp
+        gov.issue(ETH_A, holder_addr, t0, t2+1, wad(99));
+    }
 }
 
 // when claim balance is withdrawn
@@ -475,15 +504,41 @@ contract ClaimFeeWithdrawTest is DSTest, DSMath {
         // expectRevert "gate1/not-authorized"
 
         // use unauthorized address to call
-        cfm.withdraw(ETH_A, holder_addr, t0, t2, wad(99));
+        cfm.withdraw(ETH_A, t0, t2, wad(99));
     }
 
     // should burn claim balance
     function testBurnBalance() public {
-        gov.withdraw(ETH_A, holder_addr, t0, t2, wad(250)); // withdraw entire issuance
-        
         bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
+
+        // transfer from holder to governance
+        holder.moveClaim(holder_addr, gov_addr, class_t0_t2, wad(250));
         assertEq(cfm.cBal(holder_addr, class_t0_t2), wad(0));
+
+        gov.withdraw(ETH_A, t0, t2, wad(250)); // withdraw entire issuance
+        
+        assertEq(cfm.cBal(gov_addr, class_t0_t2), wad(0));
+    }
+
+    // should fail if claim balance is not held by governance
+    function testFailBurnHolderBalance() public {
+        bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
+        assertEq(cfm.cBal(holder_addr, class_t0_t2), wad(250));
+
+        holder.try_withdraw(ETH_A, t0, t2, wad(250)); // withdraw entire issuance
+    }
+
+    // should decrease totalSupply
+    function testTotalSupplyDecrease() public {
+        bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
+
+        // transfer from holder to governance
+        holder.moveClaim(holder_addr, gov_addr, class_t0_t2, wad(250));
+        assertEq(cfm.cBal(holder_addr, class_t0_t2), wad(0));
+
+        gov.withdraw(ETH_A, t0, t2, wad(250)); // withdraw entire issuance
+        
+        assertEq(cfm.totalSupply(class_t0_t2), wad(0));
     }
 }
 

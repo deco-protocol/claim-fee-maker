@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "ds-test/test.sol";
 import "dss.git/vat.sol";
-import "../common/DSMath.sol";
+import "./DSMath.sol";
 import "./Vm.sol";
 import {Gate1} from "dss-gate/gate1.sol";
 import {ClaimFee} from "../ClaimFee.sol";
@@ -77,8 +77,8 @@ contract Gov {
         cfm.issue(ilk, usr, issuance, maturity, bal);
     }
 
-    function withdraw(bytes32 ilk, address usr, uint256 issuance, uint256 maturity, uint256 bal) public {
-        cfm.withdraw(ilk, usr, issuance, maturity, bal);
+    function withdraw(bytes32 ilk, uint256 issuance, uint256 maturity, uint256 bal) public {
+        cfm.withdraw(ilk, issuance, maturity, bal);
     }
 
     function close() public {
@@ -262,6 +262,8 @@ contract ClaimFeeClosedTest is DSTest, DSMath {
         gov.close();
         assertEq(cfm.closeTimestamp(), block.timestamp);
     }
+
+    // should emit event when closed
 }
 
 // when ratio is calculated for a maturity timestamp
@@ -394,6 +396,8 @@ contract ClaimFeeRatioTest is DSTest, DSMath {
         gov.calculate(ETH_A, t3, wad(99)/100);
         assertEq(cfm.ratio(ETH_A, t3), wad(99)/100);
     }
+
+    // should emit event when new ratio is set
 }
 
 // when claim balance is cashed
