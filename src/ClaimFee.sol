@@ -83,7 +83,7 @@ contract ClaimFee {
             gate = data; // update approved total amount
 
             emit File(what, data);
-        } else revert("gate/file-not-recognized");
+        } else revert("cfm/file-not-recognized");
     }
 
     // --- Close Modifiers ---
