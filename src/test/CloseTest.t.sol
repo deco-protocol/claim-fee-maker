@@ -46,7 +46,10 @@ contract TestVat is Vat {
 }
 
 contract MockVow {
-    constructor() {}
+    address public vat;
+    constructor(address vat_) {
+        vat = vat_;
+    }
 }
 
 // governance user
@@ -203,11 +206,11 @@ contract ClaimFeeClosedTest is DSTest, DSMath {
         me = address(this);
         vat = new TestVat();
         vat.rely(address(vat));
-        vow = new MockVow();
+        vow = new MockVow(address(vat));
         
-        gate = new Gate1(address(vat), address(vow));
+        gate = new Gate1(address(vow));
         vat.rely(address(gate));
-        gate.updateApprovedTotal(rad(10000)); // set draw limit 
+        gate.file("approvedtotal", rad(10000)); // set draw limit 
 
         cfm = new ClaimFee(address(gate));
         gov = new Gov(cfm);
@@ -320,11 +323,11 @@ contract ClaimFeeRatioTest is DSTest, DSMath {
         me = address(this);
         vat = new TestVat();
         vat.rely(address(vat));
-        vow = new MockVow();
+        vow = new MockVow(address(vat));
         
-        gate = new Gate1(address(vat), address(vow));
+        gate = new Gate1(address(vow));
         vat.rely(address(gate));
-        gate.updateApprovedTotal(rad(10000)); // set draw limit 
+        gate.file("approvedtotal", rad(10000)); // set draw limit 
 
         cfm = new ClaimFee(address(gate));
         gov = new Gov(cfm);
@@ -454,11 +457,11 @@ contract ClaimFeeCashTest is DSTest, DSMath {
         me = address(this);
         vat = new TestVat();
         vat.rely(address(vat));
-        vow = new MockVow();
+        vow = new MockVow(address(vat));
         
-        gate = new Gate1(address(vat), address(vow));
+        gate = new Gate1(address(vow));
         vat.rely(address(gate));
-        gate.updateApprovedTotal(rad(10000)); // set draw limit 
+        gate.file("approvedtotal", rad(10000)); // set draw limit 
 
         cfm = new ClaimFee(address(gate));
         gov = new Gov(cfm);
