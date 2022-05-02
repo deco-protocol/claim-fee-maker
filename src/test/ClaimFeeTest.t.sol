@@ -72,8 +72,8 @@ contract Gov {
         cfm.issue(ilk, usr, issuance, maturity, bal);
     }
 
-    function withdraw(bytes32 ilk, uint256 issuance, uint256 maturity, uint256 bal) public {
-        cfm.withdraw(ilk, issuance, maturity, bal);
+    function withdraw(bytes32 ilk, address usr, uint256 issuance, uint256 maturity, uint256 bal) public {
+        cfm.withdraw(ilk, usr, issuance, maturity, bal);
     }
 
     function close() public {
@@ -147,8 +147,8 @@ contract CHolder {
         cfm.cashClaim(ilk, usr, maturity, bal);
     }
 
-    function try_withdraw(bytes32 ilk, uint256 issuance, uint256 maturity, uint256 bal) public {
-        cfm.withdraw(ilk, issuance, maturity, bal);
+    function try_withdraw(bytes32 ilk, address usr, uint256 issuance, uint256 maturity, uint256 bal) public {
+        cfm.withdraw(ilk, usr, issuance, maturity, bal);
     }    
 }
 
@@ -507,39 +507,44 @@ contract ClaimFeeWithdrawTest is DSTest, DSMath {
         // expectRevert "gate1/not-authorized"
 
         // use unauthorized address to call
-        cfm.withdraw(ETH_A, t0, t2, wad(99));
+        cfm.withdraw(ETH_A, holder_addr, t0, t2, wad(99));
     }
 
-    // should burn claim balance
-    function testBurnBalance() public {
+    // should burn claim balance held by gov
+    function testBurnGovBalance() public {
         bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
 
         // transfer from holder to governance
         holder.moveClaim(holder_addr, gov_addr, class_t0_t2, wad(250));
         assertEq(cfm.cBal(holder_addr, class_t0_t2), wad(0));
 
-        gov.withdraw(ETH_A, t0, t2, wad(250)); // withdraw entire issuance
+        gov.withdraw(ETH_A, gov_addr, t0, t2, wad(250)); // withdraw entire issuance
         
         assertEq(cfm.cBal(gov_addr, class_t0_t2), wad(0));
     }
 
-    // should fail if claim balance is not held by governance
-    function testFailBurnHolderBalance() public {
+    // should burn claim balance held by user
+    function testBurnUserBalance() public {
+        bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
+
+        gov.withdraw(ETH_A, holder_addr, t0, t2, wad(250)); // withdraw entire issuance
+        
+        assertEq(cfm.cBal(holder_addr, class_t0_t2), wad(0));
+    }
+
+    // should fail if claim balance is being withdrawn by holder
+    function testFailHolderWithdrawBalance() public {
         bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
         assertEq(cfm.cBal(holder_addr, class_t0_t2), wad(250));
 
-        holder.try_withdraw(ETH_A, t0, t2, wad(250)); // withdraw entire issuance
+        holder.try_withdraw(ETH_A, holder_addr, t0, t2, wad(250)); // withdraw entire issuance
     }
 
     // should decrease totalSupply
     function testTotalSupplyDecrease() public {
         bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
 
-        // transfer from holder to governance
-        holder.moveClaim(holder_addr, gov_addr, class_t0_t2, wad(250));
-        assertEq(cfm.cBal(holder_addr, class_t0_t2), wad(0));
-
-        gov.withdraw(ETH_A, t0, t2, wad(250)); // withdraw entire issuance
+        gov.withdraw(ETH_A, holder_addr, t0, t2, wad(250)); // withdraw entire issuance
         
         assertEq(cfm.totalSupply(class_t0_t2), wad(0));
     }

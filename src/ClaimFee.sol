@@ -80,7 +80,7 @@ contract ClaimFee {
     function file(bytes32 what, address data) external auth {
         if (what == "gate") {
             require(vat == GateAbstract(data).vat(), "vat-does-not-match");
-            gate = data; // update approved total amount
+            gate = data; // update gate address
 
             emit File(what, data);
         } else revert("cfm/file-not-recognized");
@@ -258,20 +258,25 @@ contract ClaimFee {
         mintClaim(ilk, usr, issuance, maturity, bal);
     }
 
-    /// Withdraws claim balance held by governance before maturity
-    /// @dev Governance is allowed to burn the balance it owns
-    /// @dev Users cannot withdraw their claim balance, can only execute collect
+    /// Withdraws claim balance
+    /// @dev An authorized address is allowed to burn the balance a user owns
+    /// @dev Users are not allowed to withdraw their own claim balance for safety reasons
     /// @param ilk Collateral Type
-    /// @param maturity Maturity timestamp of claim balance
+    /// @param usr User address
+    /// @param issuance Issuance timestamp
+    /// @param maturity Maturity timestamp
     /// @param bal Claim balance amount to burn
-    /// @dev With can be used both before or after close
+    /// @dev Withdraw can be used both before or after close
+    /// @dev Withdraw is meant to be executed by ancillary contracts 
+    /// @dev to provide additional functionality
     function withdraw(
         bytes32 ilk,
+        address usr,
         uint256 issuance,
         uint256 maturity,
         uint256 bal
     ) external auth {
-        burnClaim(ilk, msg.sender, issuance, maturity, bal);
+        burnClaim(ilk, usr, issuance, maturity, bal);
     }
 
     // --- Claim Functions ---

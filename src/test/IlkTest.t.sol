@@ -62,8 +62,8 @@ contract Gov {
         cfm.issue(ilk, usr, issuance, maturity, bal);
     }
 
-    function withdraw(bytes32 ilk, uint256 issuance, uint256 maturity, uint256 bal) public {
-        cfm.withdraw(ilk, issuance, maturity, bal);
+    function withdraw(bytes32 ilk, address usr, uint256 issuance, uint256 maturity, uint256 bal) public {
+        cfm.withdraw(ilk, usr, issuance, maturity, bal);
     }
 
     function close() public {
