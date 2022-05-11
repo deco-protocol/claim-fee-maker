@@ -111,7 +111,7 @@ contract ClaimFee {
         require(ilkRate != 0, "ilk/not-initialized"); // check ilk is valid
 
         initializedIlks[ilk] = true; // add it to list of initializedIlks
-        this.snapshot(ilk); // take a snapshot
+        snapshot(ilk); // take a snapshot
     }
 
     // --- Internal functions ---
@@ -188,7 +188,7 @@ contract ClaimFee {
     /// @param ilk Collateral Type
     /// @return ilkRate Ilk rate value at current timestamp
     /// @dev Snapshot is not allowed after close
-    function snapshot(bytes32 ilk) external untilClose() returns (uint256 ilkRate) {
+    function snapshot(bytes32 ilk) public untilClose() returns (uint256 ilkRate) {
         require(initializedIlks[ilk] == true, "ilk/not-initialized");
 
         (, ilkRate, , , ) = VatAbstract(vat).ilks(ilk); // retrieve ilk.rate [ray]
