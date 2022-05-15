@@ -3,10 +3,10 @@
 #checkAsserts checks assertions
 testMode: assertion
 #testLimit is the number of test sequences to run
+# TODO : Increase the limit and sequence depth
 testLimit: 1000
 #seqLen defines how many transactions are in a test sequence
 seqLen: 5
-#solcArgs allows special args to solc
 #maximum time between generated txs; default is one week
 maxTimeDelay: 15778800 # approximately 6 months
 #directory to save the corpus; by default is disabled

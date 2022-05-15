@@ -18,7 +18,7 @@ import "./TestUtil.sol";
 
 /**
     The following Echidna tests focuses on mostly access control related asserts. Echidna will run a 
-    sequence of random input and various call sequences (configured depth) to violates the 
+    sequence of random input and various call sequences (based on configured depth) to violate the 
     access control invariants defined.
 
     Target Access modifiers : auth, untilClose, afterClose
@@ -82,10 +82,6 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
         usr = new MakerUser(cfm);
         usr_addr = address(usr);
 
-        holder = new CHolder(cfm);
-        holder_addr = address(holder);
-        vat.mint(holder_addr, test_util.rad(10000)); // cfm holder holds 10000 RAD vault
-
         vat.ilkSetup(ETH_A); // vat initializes ILK (ETH_A).
         gov.initializeIlk(ETH_A); // Gov initializes ILK (ETH_A) in Claimfee as gov is a ward
         vat.ilkSetup(WBTC_A); // Vat initializes ILK (WBTC_A)
@@ -93,19 +89,6 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
 
         vat.increaseRate(ETH_A, test_util.wad(5), address(vow));
         cfm.snapshot(ETH_A); // take a snapshot at t0 @ 1.05
-        cfm.issue(ETH_A, holder_addr, t0, t2, test_util.wad(750)); // issue cf 750 to cHolder
-
-        vat.increaseRate(WBTC_A, test_util.wad(5), address(vow));
-        cfm.snapshot(WBTC_A); // take a snapshot at t0 @ 1.10
-        cfm.issue(WBTC_A, holder_addr, t0, t2,test_util. wad(5000)); // issue cf 5000 to cHolder
-
-        // vm.warp(t1); // Forward time to t1
-        
-        // vat.increaseRate(ETH_A, testUtil.wad(10), address(vow));
-        // cfm.snapshot(ETH_A); // take a snapshot at t1 @ 1.05
-
-        // vat.increaseRate(WBTC_A, testUtil.wad(10), address(vow));
-        // cfm.snapshot(WBTC_A); // take a snapshot at t1 @ 1.10
         
     }
 
