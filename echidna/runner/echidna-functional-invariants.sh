@@ -12,4 +12,4 @@ SOLC=~/.nix-profile/bin/solc-0.8.1
 readonly ECHIDNA_CLAIMFEE_CONTRACT_NAME=ClaimFeeEchidnaFunctionalInvariantTest
 
 # Invoke Echidna FUNCTIONAL INVARIANT tests for claim fee maker contract
-echidna-test echidna/"$ECHIDNA_CLAIMFEE_CONTRACT_NAME".sol --contract "$ECHIDNA_CLAIMFEE_CONTRACT_NAME" --config echidna.config.yml
+echidna-test echidna/"$ECHIDNA_CLAIMFEE_CONTRACT_NAME".sol --contract "$ECHIDNA_CLAIMFEE_CONTRACT_NAME" --config ./echidna/config/echidna.config.yml
