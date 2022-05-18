@@ -448,11 +448,6 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
         teardown();
      }
 
-
-
-
-
-
 /*
     // Conditional : The rewind fails if rate is same at both issuance and rewind.
     function test_rewind_same_rate(uint256 bal) public {
@@ -476,11 +471,6 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
         teardown();
     }
 */
-
-
-
-
-
 
     function ray(uint256 amt_) public pure returns (uint256) {
         return mulu(amt_, RAY);
