@@ -29,6 +29,10 @@ contract MakerUser {
         cfm.nope(usr);
     }
 
+    function moveClaim(address src, address dst, bytes32 class_, uint256 bal) public {
+        cfm.moveClaim(src, dst, class_, bal);
+    }
+
     function rewind(bytes32 ilk, address usr, uint256 issuance, uint256 maturity, uint256 rewind_, uint256 bal) public {
         cfm.rewind(ilk, usr, issuance, maturity, rewind_, bal);
     }
@@ -51,5 +55,10 @@ contract MakerUser {
     // Impermissible operation
      function try_calculate(bytes32 ilk, uint256 maturity, uint256 ratio_) public {
         cfm.calculate(ilk, maturity, ratio_);
+    }
+
+    // Impermissible operation
+     function try_close() public {
+        cfm.close();
     }
 }
