@@ -40,7 +40,7 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
     CHolder public holder;
     TestUtil public test_util;
 
-    Gov public gov;
+    GovernanceUser public gov_user;
     MakerUser public usr;
     address public me;
     address public gov_addr;
@@ -73,8 +73,8 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
 
         // claimfee
         cfm = new ClaimFee(address(gate));
-        gov = new Gov(cfm);
-        gov_addr = address(gov);  
+        gov_user = new GovernanceUser(cfm);
+        gov_addr = address(gov_user);  
         cfm.rely(gov_addr); // Add gov user as a ward.
         gate.kiss(address(cfm)); // Add a CFM as integration to gate
 
@@ -83,9 +83,9 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
         usr_addr = address(usr);
 
         vat.ilkSetup(ETH_A); // vat initializes ILK (ETH_A).
-        gov.initializeIlk(ETH_A); // Gov initializes ILK (ETH_A) in Claimfee as gov is a ward
+        gov_user.initializeIlk(ETH_A); // Gov initializes ILK (ETH_A) in Claimfee as gov is a ward
         vat.ilkSetup(WBTC_A); // Vat initializes ILK (WBTC_A)
-        gov.initializeIlk(WBTC_A); // gov initialize ILK (WBTC_A) in claimfee as gov is a ward
+        gov_user.initializeIlk(WBTC_A); // gov initialize ILK (WBTC_A) in claimfee as gov is a ward
 
         vat.increaseRate(ETH_A, test_util.wad(5), address(vow));
         cfm.snapshot(ETH_A); // take a snapshot at t0 @ 1.05
@@ -118,8 +118,8 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
     // Access Invariant - Claimfee balance cannot be issued after close
     function test_issue_afterclose(uint256 bal) public {
         // set VAT and claimfee to close 
-        gov.close();
-        try gov.issue(ETH_A, usr_addr, t0 , t3, bal) {
+        gov_user.close();
+        try gov_user.issue(ETH_A, usr_addr, t0 , t3, bal) {
         } catch Error (string memory errmsg) {
             assert(test_util.cmpStr(errmsg, "closed" ));
         } catch {
@@ -142,10 +142,10 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
     function test_withdraw_afterclose(uint256 bal) public {
         bytes32 class_t0_t2 = keccak256(abi.encodePacked(ETH_A, t0, t2));
 
-        gov.issue(ETH_A, usr_addr, t0, t2, bal); // issue to user
-        gov.close(); // now, close the contract
+        gov_user.issue(ETH_A, usr_addr, t0, t2, bal); // issue to user
+        gov_user.close(); // now, close the contract
 
-        gov.withdraw(ETH_A, usr_addr, t0 , t2, bal);
+        gov_user.withdraw(ETH_A, usr_addr, t0 , t2, bal);
         
         assert(cfm.cBal(usr_addr, class_t0_t2) == 0);
 
@@ -177,16 +177,16 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
     // Access Invariant - A ward can set ratio after close
     function test_calculate_afterclose(uint256 ratio) public {
 
-        gov.close();
+        gov_user.close();
 
-        gov.calculate(ETH_A,t3, ratio);
+        gov_user.calculate(ETH_A,t3, ratio);
         assert(cfm.ratio(ETH_A, t3) == ratio);
         teardown();
     }
 
     // Access Invariant - A ward cannot set ratio before close
     function test_calculate_beforeclose() public {
-        try gov.calculate(ETH_A,t3, test_util.wad(5))  {
+        try gov_user.calculate(ETH_A,t3, test_util.wad(5))  {
          } catch Error(string memory errmsg) {
             assert(test_util.cmpStr(errmsg, "not-closed" ));
         } catch {
@@ -198,8 +198,8 @@ contract ClaimFeeEchidnaAccessInvariantTest is DSMath {
     // Access Invariant - slice 
     function test_rewind_afterclose(uint256 bal) public {
 
-        gov.issue(ETH_A, usr_addr, t0, t2, bal);
-        gov.close();
+        gov_user.issue(ETH_A, usr_addr, t0, t2, bal);
+        gov_user.close();
 
         try  cfm.rewind(ETH_A, usr_addr, t0, t2, t0-1, bal)  {
          } catch Error(string memory errmsg) {

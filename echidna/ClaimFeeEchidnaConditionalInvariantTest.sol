@@ -39,7 +39,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
     CHolder public holder;
     TestUtil public testUtil;
 
-    Gov public gov;
+    GovernanceUser public gov_user;
     MakerUser public usr;
     MakerUser public usr2;
 
@@ -63,7 +63,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
         t1 = block.timestamp + 5 days; // Current block TS + 5 days
         t2 = block.timestamp + 10 days; // Current block TS + 10 days
         t3 = block.timestamp + 15 days; // Current block TS + 15 days
-        t4 = block.timestamp + 20 days;
+        t4 = block.timestamp + 20 days; // Current block TS + 20 days
 
         me = address(this);
         vat = new TestVat();
@@ -76,8 +76,8 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
 
         // claimfee
         cfm = new ClaimFee(address(gate));
-        gov = new Gov(cfm);
-        gov_addr = address(gov);  
+        gov_user = new GovernanceUser(cfm);
+        gov_addr = address(gov_user);  
         cfm.rely(gov_addr); // Add gov user as a ward.
         gate.kiss(address(cfm)); // Add a CFM as integration to gate
 
@@ -88,12 +88,12 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
         usr2 = new MakerUser(cfm);
         usr2_addr = address(usr2);
 
-        vat.mint(usr_addr, testUtil.rad(10000)); // cfm holder holds 10000 RAD vault
+        vat.mint(usr_addr, testUtil.rad(10000)); // maker user holds 10000 RAD vault
 
         vat.ilkSetup(ETH_A); // vat initializes ILK (ETH_A).
-        gov.initializeIlk(ETH_A); // Gov initializes ILK (ETH_A) in Claimfee as gov is a ward
+        gov_user.initializeIlk(ETH_A); // Gov initializes ILK (ETH_A) in Claimfee as gov is a ward
         vat.ilkSetup(WBTC_A); // Vat initializes ILK (WBTC_A)
-        gov.initializeIlk(WBTC_A); // gov initialize ILK (WBTC_A) in claimfee as gov is a ward
+        gov_user.initializeIlk(WBTC_A); // gov initialize ILK (WBTC_A) in claimfee as gov is a ward
 
         vat.increaseRate(ETH_A, testUtil.wad(5), address(vow));
         cfm.snapshot(ETH_A); // take a snapshot at t0 @ 1.05
@@ -109,7 +109,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
     function test_cannot_initialize_ilk_vatmiss() public {
         bytes32 ETH_Z = bytes32("ETH-Z"); // not initialized in vat
 
-        try gov.initializeIlk(ETH_Z) {
+        try gov_user.initializeIlk(ETH_Z) {
             assert(cfm.initializedIlks(ETH_Z) == false);
         } catch Error (string memory errmsg) {
             assert(testUtil.cmpStr(errmsg, "ilk/not-initialized"));
@@ -121,7 +121,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
 
     // Conditional Invariant : Ilk cannot be reinitialized
     function test_already_initialized_ilk() public {
-        try gov.initializeIlk(ETH_A) {
+        try gov_user.initializeIlk(ETH_A) {
         } catch Error (string memory errmsg) {
             assert(testUtil.cmpStr(errmsg, "ilk/initialized"));
         } catch {
@@ -169,7 +169,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
     function test_insert_rate_not_in_order(uint256 newRate) public {
 
         // here t2 greater than the block timestamp (cannot be in future)
-        try gov.insert(ETH_A, t0, t2, newRate) {
+        try gov_user.insert(ETH_A, t0, t2, newRate) {
         } catch Error (string memory errmsg) {
             assert(testUtil.cmpStr(errmsg, "rate/timestamps-not-in-order"));
         } catch {
@@ -189,7 +189,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
         cfm.snapshot(ETH_A); // take a snapshot at t0 @ 1.15
 
         // here t1 is in between t0 and t2
-        try gov.insert(ETH_A, t0, t1, ray(115)/100) {
+        try gov_user.insert(ETH_A, t0, t1, ray(115)/100) {
         } catch Error (string memory errmsg) {
             assert(testUtil.cmpStr(errmsg, "rate/overwrite-disabled"));
         } catch {
@@ -209,7 +209,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
         vm.warp(t4);
 
         // here the rate is not recorded at t1
-        try gov.insert(ETH_A, t1, t2, ray(115)/100) {
+        try gov_user.insert(ETH_A, t1, t2, ray(115)/100) {
         } catch Error (string memory errmsg) {
             assert(testUtil.cmpStr(errmsg, "rate/tBefore-not-present"));
         } catch {
@@ -224,7 +224,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
         vm.warp(t3);
         vat.increaseRate(ETH_A, testUtil.wad(15), address(vow));
 
-        try gov.issue(ETH_A, usr_addr, t2,t3, bal) {
+        try gov_user.issue(ETH_A, usr_addr, t2,t3, bal) {
             // no-op
         } catch Error (string memory errorMessage) {
             assert(testUtil.cmpStr(errorMessage, "timestamp/invalid") || 
@@ -304,7 +304,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
 
         usr.hope(address(this));
         
-        gov.issue(ETH_A, usr_addr, t2,t3, bal);
+        gov_user.issue(ETH_A, usr_addr, t2,t3, bal);
 
         // The rate is not recorded at t1
         try cfm.rewind(ETH_A, usr_addr, t2, t3, t1, bal) {
@@ -353,8 +353,8 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
      // Conditional : Merge cannot be performed after maturity
      function test_merge_aftermaturity(uint256 bal) public {
 
-         gov.issue(ETH_A, usr_addr, t0, t1, bal);
-         gov.issue(ETH_A, usr_addr, t1, t2, bal);
+         gov_user.issue(ETH_A, usr_addr, t0, t1, bal);
+         gov_user.issue(ETH_A, usr_addr, t1, t2, bal);
          usr.hope(address(this));
 
         try cfm.merge(ETH_A, usr_addr, t0, t1, t2+1, bal) {
@@ -369,8 +369,8 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
      // Conditional : Merge unauthorized
      function test_merge_unauthorized(uint256 bal) public {
 
-         gov.issue(ETH_A, usr_addr, t0, t1, bal);
-         gov.issue(ETH_A, usr_addr, t1, t2, bal);
+         gov_user.issue(ETH_A, usr_addr, t0, t1, bal);
+         gov_user.issue(ETH_A, usr_addr, t1, t2, bal);
 
         try cfm.merge(ETH_A, usr_addr, t0, t1, t2+1, bal) {
         } catch Error (string memory errMsg) {
@@ -409,7 +409,7 @@ contract ClaimFeeEchidnaConditionalInvariantTest is DSMath {
 
         usr.hope(address(this));
         
-        gov.issue(ETH_A, usr_addr, t1, t3, bal);
+        gov_user.issue(ETH_A, usr_addr, t1, t3, bal);
         vat.increaseRate(ETH_A, testUtil.wad(15), address(vow));
         cfm.snapshot(ETH_A);
 
