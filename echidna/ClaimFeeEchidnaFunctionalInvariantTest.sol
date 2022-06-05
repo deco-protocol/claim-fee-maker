@@ -135,4 +135,22 @@ contract ClaimFeeEchidnaFunctionalInvariantTest is DSMath {
             assert(false); // if echidna fails on any other reverts
         }
     }
+
+    function test_initialize(bytes32 ilk) public {
+        
+        // Initialize the ilk in VAT
+        vat.ilkSetup(ilk);
+        vat.increaseRate(ilk, testUtil.wad(5), address(vow));
+
+        try cfm.initializeIlk(ilk) {
+            assert(cfm.initializedIlks(ilk) == true);
+            assert(cfm.latestRateTimestamp(ilk) == block.timestamp);
+
+        } catch Error(string memory error_message) {
+            assert(
+                cfm.initializedIlks(ilk) == false && testUtil.cmpStr(error_message, "ilk/initialized") ||
+                cfm.wards(msg.sender) == 0 && testUtil.cmpStr(error_message, "gate1/not-authorized")
+             );
+        }
+    }
 }
