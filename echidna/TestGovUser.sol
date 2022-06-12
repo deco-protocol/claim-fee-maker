@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import {ClaimFee} from "../src/ClaimFee.sol";
 
 // governance user
-contract Gov {
+contract GovernanceUser {
     ClaimFee public cfm;
 
     constructor(ClaimFee cfm_) {

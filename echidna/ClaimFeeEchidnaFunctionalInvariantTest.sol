@@ -109,6 +109,7 @@ contract ClaimFeeEchidnaFunctionalInvariantTest is DSMath {
         } catch Error (string memory errMessage) {
             assert(
                 msg.sender != src && testUtil.cmpStr(errMessage, "not-allowed") ||
+                cfm.can(msg.sender, src) != 1 && testUtil.cmpStr(errMessage, "not-allowed") ||
                 cfm.cBal(src, class_) < bal 
             );
         }
@@ -151,6 +152,90 @@ contract ClaimFeeEchidnaFunctionalInvariantTest is DSMath {
                 cfm.initializedIlks(ilk) == false && testUtil.cmpStr(error_message, "ilk/initialized") ||
                 cfm.wards(msg.sender) == 0 && testUtil.cmpStr(error_message, "gate1/not-authorized")
              );
+        } catch {
+            assert(false);
         }
     }
+
+    function test_snapshot(bytes32 ilk) public {
+
+        vat.ilkSetup(ilk);
+        vat.increaseRate(ilk, testUtil.wad(10), address(vow));
+        try cfm.snapshot(ilk) {
+            assert(cfm.rate(ilk,block.timestamp) == testUtil.wad(10));
+            assert(cfm.latestRateTimestamp(ilk) == block.timestamp);
+        } catch Error(string memory error_message) {
+            assert(
+                cfm.initializedIlks(ilk) == false && testUtil.cmpStr(error_message, "ilk/not-initialized")
+            );
+        } catch {
+            assert(false);
+        }
+
+    }
+
+    function test_insert(bytes32 ilk, uint256 tBefore, uint256 tInsert, uint256 rate) public {
+         vat.ilkSetup(ilk);
+         vat.increaseRate(ilk, testUtil.wad(10), address(vow));
+         cfm.initializeIlk(ilk);
+
+        // cfm.rely(sender, usr); // this can be removed
+         try cfm.insert(ilk, tBefore, tInsert, rate) {
+                assert(cfm.rate(ilk, tInsert) == rate);
+         } catch Error(string memory error_message) {
+             assert(
+                 (tBefore >= tInsert)  && testUtil.cmpStr(error_message, "rate/timestamps-not-in-order") ||
+                 (tInsert >= cfm.latestRateTimestamp(ilk)) && testUtil.cmpStr(error_message, "rate/timestamps-not-in-order") ||
+                 rate < RAY && testUtil.cmpStr(error_message, "rate/below-one") ||
+                 cfm.rate(ilk, tInsert) != 0 && testUtil.cmpStr(error_message, "rate/overwrite-disabled") ||
+                 cfm.rate(ilk, tBefore) == 0 && testUtil.cmpStr(error_message, "rate/tBefore-not-present") ||
+                 cfm.rate(ilk, tBefore) > rate && testUtil.cmpStr(error_message, "rate/invalid") ||
+                 cfm.rate(ilk, cfm.latestRateTimestamp(ilk)) < rate &&   testUtil.cmpStr(error_message, "rate/invalid")
+             );
+         }catch {
+             assert(false);
+         }
+     }
+
+    function test_collect(bytes32 ilk, address usr, uint256 issTS, uint256 matTS, uint256 collectTS, uint256 bal) public {
+         vat.ilkSetup(ilk);
+         vat.increaseRate(ilk, testUtil.wad(10), address(vow));
+         cfm.initializeIlk(ilk);
+         // issue ?? 
+
+        uint256 issRate = cfm.rate(ilk, issTS);
+        uint256 collectRate = cfm.rate(ilk, collectTS);
+
+        bytes32 ilkClassIssMat = keccak256(abi.encodePacked(ilk, issTS, matTS)); // iss, mat
+        bytes32 ilkClassColMat = keccak256(abi.encodePacked(ilk, collectTS, matTS)); // collect, mat
+        uint256 issBalance = cfm.cBal(usr, ilkClassIssMat);
+        uint256 collectBalance = cfm.cBal(usr, ilkClassColMat);
+
+        try cfm.collect(ilk, usr, issTS, matTS, collectTS, bal) {
+            assert(cfm.cBal(usr, ilkClassIssMat) == issBalance - bal);
+            if (collectTS != matTS) {
+                assert(cfm.cBal(usr, ilkClassColMat) == collectBalance + bal);
+            }
+        } catch Error(string memory error_message) {
+            assert(
+                msg.sender != usr && testUtil.cmpStr(error_message, "not-allowed") ||
+                cfm.can(msg.sender, usr) != 1 && testUtil.cmpStr(error_message, "not-allowed") ||
+                issRate == 0 && testUtil.cmpStr(error_message, "rate/invalid") ||
+                collectRate == 0 && testUtil.cmpStr(error_message, "rate/invalid") ||
+                issTS > collectTS && testUtil.cmpStr(error_message, "timestamp/invalid") ||
+                collectTS > matTS && testUtil.cmpStr(error_message, "timestamp/invalid")
+            );
+        } catch {
+            assert(false);
+        }
+    }
+
+    function rely(address usr) public {
+        try cfm.rely(usr) {
+            assert(cfm.wards(usr) == 1);
+        } catch Error(string memory error_message) {
+            assert(false);
+        }
+    }
+
 }
