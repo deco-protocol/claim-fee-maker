@@ -511,13 +511,4 @@ contract ClaimFee {
         burnClaim(ilk, usr, latestRateTimestamp[ilk], maturity, bal);
     }
 
-    // --- Convenience Functions ---
-    /// Calculate and return the class value
-    /// @param ilk Collateral Type
-    /// @param issuance Issuance timestamp
-    /// @param maturity Maturity timestamp
-    /// @return class_ Calculated class value
-    function getClass(string calldata ilk, uint256 issuance, uint256 maturity) public pure returns (bytes32 class_) {
-        class_ = keccak256(abi.encodePacked(bytes32(bytes(ilk)), issuance, maturity));
-    }
 }
