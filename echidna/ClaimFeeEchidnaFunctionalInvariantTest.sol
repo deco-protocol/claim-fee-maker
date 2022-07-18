@@ -287,9 +287,7 @@ contract ClaimFeeEchidnaFunctionalInvariantTest is DSMath {
             assert(
                 msg.sender != usr_address && testUtil.cmpStr(error_message, "not-allowed") ||
                 cfm.can(msg.sender, usr_address) != 1 && testUtil.cmpStr(error_message, "not-allowed") ||
-                t1 >= t2 && testUtil.cmpStr(error_message, "timestamp/invalid") ||
-                t2 >= t3 && testUtil.cmpStr(error_message, "timestamp/invalid") ||
-                (t1 >= t2 || t2 >= t3) && testUtil.cmpStr(error_message, "timestamp/invalid") ||
+                !(ts1 < ts2 && ts2 < ts3) && testUtil.cmpStr(error_message, "timestamp/invalid") ||
                 cfm.cBal(usr_address, ilkClass_t1_t2) < bal && testUtil.cmpStr(error_message, "cBal/insufficient-balance") ||
                 cfm.cBal(usr_address, ilkClass_t2_t3) < bal && testUtil.cmpStr(error_message, "cBal/insufficient-balance")
             );
@@ -348,7 +346,7 @@ contract ClaimFeeEchidnaFunctionalInvariantTest is DSMath {
                 msg.sender != user_address && testUtil.cmpStr(error_message, "not-allowed") ||
                 cfm.can(msg.sender, user_address) != 1 && testUtil.cmpStr(error_message, "not-allowed") ||
                 cfm.rate(ilk, ts1) !=0 && testUtil.cmpStr(error_message, "rate/invalid") ||
-                cfm.rate(ilk, ts2) == 0 && testUtil.cmpStr(error_message, "timestamp/invalid")
+                cfm.rate(ilk, ts2) == 0 && testUtil.cmpStr(error_message, "rate/invalid")
             );
         } catch {
             assert(false);

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 pragma solidity ^0.8.0;
-import "./deps/vat.sol"; 
-import "./TestVat.sol";
+import "./deps/vat.sol";
 
 contract TestVat is Vat {
     uint256 constant internal RAY = 10 ** 27;
@@ -24,7 +23,7 @@ contract TestVat is Vat {
         Ilk storage ilk = ilks[ilk_];
 
         // percentage between 0 to 500  in wad
-        require(percentage >= 0 && percentage <= (500 * WAD), "not-valid-percentage"); 
+        require(percentage >= 0 && percentage <= (500 * WAD), "not-valid-percentage");
         int256 rate = int256((ilk.rate * percentage)/10**20);
 
         ilk.rate = _add(ilk.rate, rate);
